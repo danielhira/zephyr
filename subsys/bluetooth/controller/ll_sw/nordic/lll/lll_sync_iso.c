@@ -185,6 +185,7 @@ static int prepare_cb_common(struct lll_prepare_param *p)
 	struct lll_sync_iso *lll;
 	uint32_t ticks_at_event;
 	uint32_t ticks_at_start;
+	uint16_t stream_handle;
 	uint16_t event_counter;
 	uint8_t access_addr[4];
 	uint16_t data_chan_id;
@@ -193,7 +194,6 @@ static int prepare_cb_common(struct lll_prepare_param *p)
 	uint8_t crc_init[3];
 	struct ull_hdr *ull;
 	uint32_t remainder;
-	uint16_t handle;
 	uint32_t hcto;
 	uint8_t phy;
 
@@ -253,8 +253,8 @@ static int prepare_cb_common(struct lll_prepare_param *p)
 	lll->stream_curr = 0U;
 
 	/* Skip subevents until first selected BIS */
-	handle = lll->stream_handle[lll->stream_curr];
-	stream = ull_sync_iso_lll_stream_get(handle);
+	stream_handle = lll->stream_handle[lll->stream_curr];
+	stream = ull_sync_iso_lll_stream_get(stream_handle);
 	if ((stream->bis_index != lll->bis_curr) &&
 	    (stream->bis_index <= lll->num_bis)) {
 		/* First selected BIS */
@@ -495,8 +495,8 @@ static void isr_rx(void *param)
 	/* Check CRC and generate ISO Data PDU */
 	if (crc_ok) {
 		struct lll_sync_iso_stream *stream;
+		uint16_t stream_handle;
 		struct pdu_bis *pdu;
-		uint16_t handle;
 
 		/* Check if Control Subevent being received */
 		if ((lll->bn_curr == lll->bn) &&
@@ -550,15 +550,19 @@ static void isr_rx(void *param)
 			payload_index -= lll->payload_count_max;
 		}
 
-		handle = lll->stream_handle[lll->stream_curr];
-		stream = ull_sync_iso_lll_stream_get(handle);
+		stream_handle = lll->stream_handle[lll->stream_curr];
+		stream = ull_sync_iso_lll_stream_get(stream_handle);
 
 		/* store the received PDU */
 		if ((lll->bis_curr == stream->bis_index) && pdu->len &&
 		    !lll->payload[bis_idx][payload_index] &&
 		    ((payload_index >= lll->payload_tail) ||
 		     (payload_index < lll->payload_head))) {
+			uint16_t handle;
+
 			ull_iso_pdu_rx_alloc();
+
+			handle = LL_BIS_SYNC_HANDLE_FROM_IDX(stream_handle);
 			isr_rx_iso_data_valid(lll, handle, node_rx);
 
 			lll->payload[bis_idx][payload_index] = node_rx;
@@ -656,13 +660,13 @@ isr_rx_find_subevent:
 	if (lll->bis_curr < lll->num_bis) {
 		const uint8_t stream_curr = lll->stream_curr + 1U;
 		struct lll_sync_iso_stream *stream;
-		uint16_t handle;
+		uint16_t stream_handle;
 
 		/* Next selected stream */
 		if (stream_curr < lll->stream_count) {
 			lll->stream_curr = stream_curr;
-			handle = lll->stream_handle[lll->stream_curr];
-			stream = ull_sync_iso_lll_stream_get(handle);
+			stream_handle = lll->stream_handle[lll->stream_curr];
+			stream = ull_sync_iso_lll_stream_get(stream_handle);
 			if (stream->bis_index <= lll->num_bis) {
 				uint8_t bis_idx_new;
 
@@ -737,10 +741,10 @@ isr_rx_find_subevent:
 		struct lll_sync_iso_stream *stream;
 		uint8_t payload_tail;
 		uint8_t stream_curr;
-		uint16_t handle;
+		uint16_t stream_handle;
 
-		handle = lll->stream_handle[lll->stream_curr];
-		stream = ull_sync_iso_lll_stream_get(handle);
+		stream_handle = lll->stream_handle[lll->stream_curr];
+		stream = ull_sync_iso_lll_stream_get(stream_handle);
 		/* Skip BIS indices not synchronized. bis_index is 0x01 to 0x1F,
 		 * where as bis_idx is 0 indexed.
 		 */
@@ -767,6 +771,7 @@ isr_rx_find_subevent:
 				node_rx = ull_iso_pdu_rx_alloc_peek(2U);
 				if (node_rx) {
 					struct pdu_bis *pdu;
+					uint16_t handle;
 
 					ull_iso_pdu_rx_alloc();
 
@@ -774,6 +779,7 @@ isr_rx_find_subevent:
 					pdu->ll_id = PDU_BIS_LLID_COMPLETE_END;
 					pdu->len = 0U;
 
+					handle = LL_BIS_SYNC_HANDLE_FROM_IDX(stream_handle);
 					isr_rx_iso_data_invalid(lll, bn, handle,
 								node_rx);
 
