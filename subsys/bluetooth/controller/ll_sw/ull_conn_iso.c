@@ -354,7 +354,7 @@ void ull_conn_iso_done(struct node_rx_event_done *done)
 
 		if (cis->lll.handle != LLL_HANDLE_INVALID) {
 			/* CIS was setup and is now expected to be going */
-			if (!(done->extra.trx_performed_mask &
+			if (!(done->extra.trx_performed_bitmask &
 			      (1U << LL_CIS_IDX_FROM_HANDLE(cis->lll.handle)))) {
 				/* We did NOT have successful transaction on established CIS,
 				 * or CIS was not yet established, so handle timeout
@@ -382,7 +382,7 @@ void ull_conn_iso_done(struct node_rx_event_done *done)
 		}
 	}
 
-	if (IS_PERIPHERAL(cig) && done->extra.trx_performed_mask) {
+	if (IS_PERIPHERAL(cig) && done->extra.trx_performed_bitmask) {
 		ull_drift_ticks_get(done, &ticks_drift_plus,
 				    &ticks_drift_minus);
 	}
