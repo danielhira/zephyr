@@ -141,6 +141,8 @@ uint8_t ll_cig_parameters_commit(uint8_t cig_id)
 	/* CIG does not exist - create it */
 	cig = ll_conn_iso_group_acquire();
 	if (!cig) {
+		ll_iso_setup.cis_idx = 0U;
+
 		/* No space for new CIG */
 		return BT_HCI_ERR_INSUFFICIENT_RESOURCES;
 	}
@@ -152,6 +154,7 @@ uint8_t ll_cig_parameters_commit(uint8_t cig_id)
 	cig->lll.handle = ll_conn_iso_group_handle_get(cig);
 	cig->lll.role = BT_HCI_ROLE_CENTRAL;
 	cig->lll.resume_cis = LLL_HANDLE_INVALID;
+	cig->lll.num_cis = 0U;
 
 	if (!cig->central.test) {
 		/* TODO: Calculate ISO_Interval based on SDU_Interval and Max_SDU vs Max_PDU,
@@ -199,6 +202,8 @@ uint8_t ll_cig_parameters_commit(uint8_t cig_id)
 		/* Acquire new CIS */
 		cis = ll_conn_iso_stream_acquire();
 		if (cis == NULL) {
+			ll_iso_setup.cis_idx = 0U;
+
 			/* No space for new CIS */
 			return BT_HCI_ERR_INSUFFICIENT_RESOURCES;
 		}
@@ -429,7 +434,7 @@ uint8_t ll_cig_parameters_commit(uint8_t cig_id)
 	cig->c_latency = c_max_latency;
 	cig->p_latency = p_max_latency;
 
-	cig->lll.num_cis = cis_count;
+	ll_iso_setup.cis_idx = 0U;
 
 	return BT_HCI_ERR_SUCCESS;
 }
@@ -580,7 +585,7 @@ uint8_t ll_cig_remove(uint8_t cig_id)
 	handle_iter = UINT16_MAX;
 	has_cis = false;
 
-	for (int i = 0; i < cig->cis_count; i++)  {
+	for (int i = 0; i < cig->lll.num_cis; i++)  {
 		cis = ll_conn_iso_stream_get_by_group(cig, &handle_iter);
 		if (!cis) {
 			break;
@@ -598,10 +603,22 @@ uint8_t ll_cig_remove(uint8_t cig_id)
 	if (has_cis) {
 		/* Clear configuration only - let CIS disconnection release instance */
 		cig->cis_count = 0;
-	} else {
-		/* No CISes associated with the CIG - release the instance */
-		ll_conn_iso_group_release(cig);
+
+		return BT_HCI_ERR_SUCCESS;
 	}
+
+	/* Release associated CIS contexts */
+	for (uint8_t i = 0; i < cig->cis_count; i++) {
+		cis = ll_conn_iso_stream_get_by_group(cig, &handle_iter);
+		if (!cis) {
+			break;
+		}
+
+		ll_conn_iso_stream_release(cis);
+	}
+
+	/* No CISes associated with the CIG - release the instance */
+	ll_conn_iso_group_release(cig);
 
 	return BT_HCI_ERR_SUCCESS;
 }
