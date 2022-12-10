@@ -89,22 +89,6 @@ static void cc_ntf_established(struct ll_conn *conn, struct proc_ctx *ctx)
 }
 
 #if defined(CONFIG_BT_PERIPHERAL)
-static uint16_t cc_event_counter(struct ll_conn *conn)
-{
-	struct lll_conn *lll;
-	uint16_t event_counter;
-
-	uint16_t lazy = conn->llcp.prep.lazy;
-
-	/**/
-	lll = &conn->lll;
-
-	/* Calculate current event counter */
-	event_counter = lll->event_counter + lll->latency_prepare + lazy;
-
-	return event_counter;
-}
-
 /* LLCP Remote Procedure FSM states */
 enum {
 	/* Establish Procedure */
@@ -153,8 +137,9 @@ enum {
 
 static void llcp_rp_cc_tx_rsp(struct ll_conn *conn, struct proc_ctx *ctx)
 {
-	struct node_tx *tx;
+	uint16_t event_counter = ull_conn_event_counter(conn);
 	struct pdu_data *pdu;
+	struct node_tx *tx;
 
 	/* Allocate tx node */
 	tx = llcp_tx_alloc(conn, ctx);
@@ -162,8 +147,8 @@ static void llcp_rp_cc_tx_rsp(struct ll_conn *conn, struct proc_ctx *ctx)
 
 	pdu = (struct pdu_data *)tx->pdu;
 
-	ctx->data.cis_create.conn_event_count = MAX(ctx->data.cis_create.conn_event_count,
-						    cc_event_counter(conn) + 2);
+	ctx->data.cis_create.conn_event_count =
+		MAX(ctx->data.cis_create.conn_event_count, event_counter + 2U);
 
 	llcp_pdu_encode_cis_rsp(ctx, pdu);
 	ctx->tx_opcode = pdu->llctrl.opcode;
@@ -438,6 +423,7 @@ static void rp_cc_state_wait_ntf(struct ll_conn *conn, struct proc_ctx *ctx, uin
 static void rp_cc_check_instant(struct ll_conn *conn, struct proc_ctx *ctx, uint8_t evt,
 				void *param)
 {
+	uint16_t event_counter = ull_conn_event_counter(conn);
 	uint16_t start_event_count;
 
 	start_event_count = ctx->data.cis_create.conn_event_count;
@@ -457,8 +443,7 @@ static void rp_cc_check_instant(struct ll_conn *conn, struct proc_ctx *ctx, uint
 	}
 #endif /* CONFIG_BT_CTLR_PERIPHERAL_ISO_EARLY_CIG_START */
 
-	if (is_instant_reached_or_passed(start_event_count,
-					 cc_event_counter(conn))) {
+	if (is_instant_reached_or_passed(start_event_count, event_counter)) {
 		/* Start CIS */
 		ull_conn_iso_start(conn, conn->llcp.prep.ticks_at_expire,
 				   ctx->data.cis_create.cis_handle);
