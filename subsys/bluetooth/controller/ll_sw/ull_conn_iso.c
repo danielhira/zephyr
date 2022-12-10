@@ -717,7 +717,8 @@ static void ticker_op_cb(uint32_t status, void *param)
 	LL_ASSERT(status == TICKER_STATUS_SUCCESS);
 }
 
-void ull_conn_iso_start(struct ll_conn *acl, uint32_t ticks_at_expire, uint16_t cis_handle)
+void ull_conn_iso_start(struct ll_conn *acl, uint32_t ticks_at_expire,
+			uint16_t cis_handle, uint16_t instant_latency)
 {
 	struct ll_conn_iso_group *cig;
 	struct ll_conn_iso_stream *cis;
@@ -785,10 +786,24 @@ void ull_conn_iso_start(struct ll_conn *acl, uint32_t ticks_at_expire, uint16_t 
 		ticks_remainder = EVENT_US_FRAC_TO_REMAINDER(iso_interval_us_frac);
 
 #if defined(CONFIG_BT_CTLR_PERIPHERAL_ISO_EARLY_CIG_START)
-		/* Adjust CIG offset and reference point ahead one interval */
-		cig_offset_us += (acl->lll.interval * CONN_INT_UNIT_US);
+		if (instant_latency == 0U) {
+			/* Adjust CIG offset and reference point ahead one
+			 * interval
+			 */
+			cig_offset_us +=
+				(acl->lll.interval * CONN_INT_UNIT_US);
 
-		cig->cig_ref_point += (acl->lll.interval * CONN_INT_UNIT_US);
+			cig->cig_ref_point +=
+				(acl->lll.interval * CONN_INT_UNIT_US);
+		} else {
+			LL_ASSERT(instant_latency == 1U);
+		}
+
+#else /* CONFIG_BT_CTLR_PERIPHERAL_ISO_EARLY_CIG_START */
+		/* FIXME: Handle latency due to skipped ACL events around the
+		 * instant to start CIG
+		 */
+		LL_ASSERT(instant_latency == 0U);
 #endif /* CONFIG_BT_CTLR_PERIPHERAL_ISO_EARLY_CIG_START */
 
 #endif /* CONFIG_BT_CTLR_PERIPHERAL_ISO */
@@ -806,6 +821,10 @@ void ull_conn_iso_start(struct ll_conn *acl, uint32_t ticks_at_expire, uint16_t 
 		/* Compensate for missing remainder scheduling first expire */
 		cig_offset_us += EVENT_TICKER_RES_MARGIN_US;
 
+		/* FIXME: Handle latency due to skipped ACL events around the
+		 * instant to start CIG
+		 */
+		LL_ASSERT(instant_latency == 0U);
 	} else {
 		LL_ASSERT(0);
 
