@@ -10,9 +10,12 @@
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/iso.h>
 
+#include "ble_hci_vsc.h"
 #include "common.h"
 
 #include <zephyr/logging/log.h>
+#include <zephyr/sys/reboot.h>
+
 LOG_MODULE_REGISTER(iso_broadcast_main, LOG_LEVEL_DBG);
 
 enum benchmark_role {
@@ -69,6 +72,7 @@ void main(void)
 		return;
 	}
 
+	LOG_INF("Using Zephyr controller with PR 52955");
 	LOG_INF("Bluetooth initialized");
 
 
@@ -90,7 +94,9 @@ void main(void)
 		}
 
 		LOG_INF("Test complete %d", err);
+		break;
 	}
 
 	LOG_INF("Exiting");
+	sys_reboot(SYS_REBOOT_COLD);
 }

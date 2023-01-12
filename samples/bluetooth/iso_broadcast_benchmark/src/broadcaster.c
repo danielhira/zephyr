@@ -9,6 +9,7 @@
 #include <zephyr/console/console.h>
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/iso.h>
+#include <zephyr/net/net_ip.h>
 #include <zephyr/sys/byteorder.h>
 
 #include <zephyr/logging/log.h>
@@ -377,6 +378,10 @@ static void iso_timer_timeout(struct k_work *work)
 		}
 
 		net_buf_reserve(buf, BT_ISO_CHAN_SEND_RESERVE);
+
+		// Send the packet counter as a sequence number in the first four bytes.
+		*((uint32_t*)iso_data) = htonl(iso_send_count);
+
 		net_buf_add_mem(buf, iso_data, iso_tx_qos.sdu);
 		ret = bt_iso_chan_send(&bis_iso_chans[i], buf, seq_num,
 				       BT_ISO_TIMESTAMP_NONE);
@@ -541,7 +546,8 @@ int test_run_broadcaster(void)
 
 	if (!data_initialized) {
 		/* Init data */
-		for (int i = 0; i < iso_tx_qos.sdu; i++) {
+		// Skip the first four bytes which will be used as a sequence number.
+		for (int i = 4; i < iso_tx_qos.sdu; i++) {
 			iso_data[i] = (uint8_t)i;
 		}
 

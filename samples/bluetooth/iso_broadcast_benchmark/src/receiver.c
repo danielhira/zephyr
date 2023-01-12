@@ -8,6 +8,7 @@
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/conn.h>
 #include <zephyr/bluetooth/iso.h>
+#include <zephyr/net/net_ip.h>
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/console/console.h>
 
@@ -23,6 +24,8 @@ LOG_MODULE_REGISTER(iso_broadcast_receiver, LOG_LEVEL_DBG);
 struct iso_recv_stats {
 	uint32_t     iso_recv_count;
 	uint32_t     iso_lost_count;
+	uint32_t     last_seq_num_received;
+	uint32_t     print_next_seq_nums;
 };
 
 static bool         broadcaster_found;
@@ -86,16 +89,11 @@ static void scan_recv(const struct bt_le_scan_recv_info *info,
 		return;
 	}
 
-	if (info->interval == 0U) {
-		/* Not broadcast periodic advertising - Ignore */
-		return;
-	}
-
 	(void)memset(name, 0, sizeof(name));
 
 	bt_data_parse(buf, data_cb, name);
 
-	if (strncmp(DEVICE_NAME, name, strlen(DEVICE_NAME))) {
+	if (strncmp(DEVICE_NAME, name, strlen(DEVICE_NAME)) || info->interval == 0) {
 		return;
 	}
 
@@ -108,6 +106,7 @@ static void scan_recv(const struct bt_le_scan_recv_info *info,
 
 	per_sid = info->sid;
 	per_interval_ms = BT_CONN_INTERVAL_TO_MS(info->interval);
+
 	bt_addr_le_copy(&per_addr, info->addr);
 
 	k_sem_give(&sem_per_adv);
@@ -181,6 +180,7 @@ static void iso_recv(struct bt_iso_chan *chan,
 		     struct net_buf *buf)
 {
 	uint32_t total_packets;
+	uint32_t sequence_number = 0;
 	static bool stats_latest_arr[1000];
 	static size_t stats_latest_arr_pos;
 
@@ -201,6 +201,29 @@ static void iso_recv(struct bt_iso_chan *chan,
 	}
 
 	total_packets = stats_overall.iso_recv_count + stats_overall.iso_lost_count;
+
+	// Only inspect valid packets.
+	if (info->flags & BT_ISO_FLAGS_VALID) {
+    // Get packet sequence number from first four bytes.
+		sequence_number = ntohl(*((uint32_t*)buf->data));
+
+	  // Expect to see the next packet. 
+	  if (stats_current_sync.last_seq_num_received + 1 != sequence_number) {
+	  	uint32_t num_missing_packets = sequence_number - stats_current_sync.last_seq_num_received - 1;
+	    LOG_WRN("Missing %u packet(s)! Last packet seen: %u, Current packet sequence number: %u",
+					num_missing_packets, stats_current_sync.last_seq_num_received, sequence_number);
+	  }
+	  stats_current_sync.last_seq_num_received = sequence_number;
+
+	  // Validate packet contents, skipping the first four bytes (seq num).
+	  for (int i = 4; i < buf->len; ++i) {
+      if (buf->data[i] != i) {
+	  		LOG_ERR("Packet contents corrupt! Expected %u, got %u. Skipping this packet [#%u]",
+						i, buf->data[i], sequence_number);
+	  		break;
+	  	}
+	  }
+  }
 
 	if ((total_packets % 100) == 0) {
 		struct iso_recv_stats stats_latest = { 0 };
@@ -478,6 +501,7 @@ int test_run_receiver(void)
 
 	last_received_counter = 0;
 	memset(&stats_current_sync, 0, sizeof(stats_current_sync));
+	stats_current_sync.last_seq_num_received = -1;
 	big_sync_start_time = 0;
 
 	err = create_big_sync(&big, sync);
